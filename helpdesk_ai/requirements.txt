@@ -5,3 +5,5 @@ psycopg2-binary
 alembic
 python-dotenv
 email-validator  # used by FastAPI/Pydantic for EmailStr
+scikit-learn
+joblib
