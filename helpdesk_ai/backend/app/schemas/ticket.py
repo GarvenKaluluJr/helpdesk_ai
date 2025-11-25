@@ -1,3 +1,5 @@
+# helpdesk_ai/backend/app/schemas/ticket.py
+
 from datetime import datetime
 from typing import Optional
 
@@ -30,3 +32,12 @@ class TicketRead(BaseModel):
     confidence: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TicketUpdate(BaseModel):
+    category_final: Optional[str] = None
+    priority_final: Optional[str] = None
+    queue: Optional[str] = None
+    status: Optional[str] = None
+
+    model_config = ConfigDict(extra="forbid")
