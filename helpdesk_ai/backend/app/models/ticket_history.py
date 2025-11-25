@@ -25,7 +25,9 @@ class TicketHistory(Base):
     changed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     changed_at = Column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), 
+        server_default=func.now(), 
+        nullable=False
     )
 
     ticket = relationship("Ticket", back_populates="history_entries")
