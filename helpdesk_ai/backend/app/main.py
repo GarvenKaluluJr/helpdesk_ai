@@ -10,13 +10,22 @@ from fastapi import (
     HTTPException,
     UploadFile,
     FastAPI,
+    Request,
 )
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from .api.v1.tickets import router as tickets_router
-from .db import get_db
+from .auth import (
+    create_access_token,
+    get_current_user,
+    require_admin,
+    verify_password,
+    get_password_hash,
+)
+from .db import get_db, SessionLocal
 from .models.ticket import Ticket
+from .models.user import User
 from .schemas.ticket import TicketCreate
 
 import csv
@@ -26,19 +35,133 @@ from io import StringIO
 app = FastAPI(title="AI Helpdesk Ticket Classifier")
 
 
+# -------- Phase 3.1: seed initial users (admin, agent) --------
+
+@app.on_event("startup")
+def seed_initial_users():
+    db = SessionLocal()
+    try:
+        if not db.query(User).filter_by(username="admin").first():
+            admin = User(
+                username="admin",
+                password_hash=get_password_hash("admin123"),
+                role="admin",
+            )
+            db.add(admin)
+        if not db.query(User).filter_by(username="agent").first():
+            agent = User(
+                username="agent",
+                password_hash=get_password_hash("agent123"),
+                role="agent",
+            )
+            db.add(agent)
+        db.commit()
+    finally:
+        db.close()
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
 
-# -------------------------------
-# Phase 2.2 – Simple HTML form
-# -------------------------------
+# -------- Phase 3.2: login + session (JWT cookie) --------
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_form():
+    return """
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="utf-8" /><title>Login</title></head>
+      <body>
+        <h1>Helpdesk login</h1>
+        <form method="post" action="/login">
+          <label>Username:</label><br />
+          <input type="text" name="username" required /><br /><br />
+          <label>Password:</label><br />
+          <input type="password" name="password" required /><br /><br />
+          <button type="submit">Login</button>
+        </form>
+      </body>
+    </html>
+    """
+
+
+@app.post("/login", response_class=HTMLResponse)
+async def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not verify_password(password, user.password_hash):
+        return HTMLResponse(
+            content="<h2>Invalid username or password</h2><a href='/login'>Try again</a>",
+            status_code=400,
+        )
+
+    token = create_access_token({"sub": user.username})
+    response = RedirectResponse(url="/dashboard", status_code=302)
+    response.set_cookie(
+        "access_token",
+        token,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie("access_token")
+    return response
+
+
+# -------- Phase 3.3: dashboard (needs logged-in user) --------
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    tickets = db.query(Ticket).order_by(Ticket.created_at.desc()).all()
+
+    rows = ""
+    for t in tickets:
+        rows += (
+            f"<tr><td>{t.id}</td><td>{t.subject}</td>"
+            f"<td>{t.status}</td><td>{t.email}</td></tr>"
+        )
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="utf-8" /><title>Dashboard</title></head>
+      <body>
+        <h1>Dashboard ({current_user.username}, role={current_user.role})</h1>
+        <p><a href="/logout">Logout</a></p>
+        <p><a href="/">Create ticket</a></p>
+        <table border="1" cellpadding="4" cellspacing="0">
+          <thead>
+            <tr><th>ID</th><th>Subject</th><th>Status</th><th>Email</th></tr>
+          </thead>
+          <tbody>
+            {rows}
+          </tbody>
+        </table>
+      </body>
+    </html>
+    """
+
+
+# -------- Phase 2.2/3.3: ticket form (requires login) --------
 
 @app.get("/", response_class=HTMLResponse)
-async def ticket_form():
+async def ticket_form(current_user: User = Depends(get_current_user)):
     """
-    Simple HTML form that posts to /tickets .
+    Ticket creation form – only for authenticated users.
     """
     return """
     <!DOCTYPE html>
@@ -72,9 +195,7 @@ async def ticket_form():
     """
 
 
-# -------------------------------
-# Phase 2.1 & 2.3 – /tickets (HTML submission)
-# -------------------------------
+# -------- Phase 2.1/3.3: HTML /tickets (requires login) --------
 
 @app.post("/tickets", response_class=HTMLResponse)
 async def submit_ticket(
@@ -83,15 +204,9 @@ async def submit_ticket(
     subject: str = Form(...),
     body: str = Form(...),
     category_hint: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    HTML form submission endpoint .
-
-    - Validates name, email, subject, body (via form required fields).
-    - Optional category_hint.
-    - Sets status = "new" and created_at via DB defaults.
-    """
     ticket = Ticket(
         name=name,
         email=email,
@@ -116,32 +231,27 @@ async def submit_ticket(
         <p><strong>ID:</strong> {ticket.id}</p>
         <p><strong>Subject:</strong> {ticket.subject}</p>
         <p><strong>Status:</strong> {ticket.status}</p>
-        <a href="/">Create another ticket</a>
+        <a href="/">Create another ticket</a><br/>
+        <a href="/dashboard">Back to dashboard</a>
       </body>
     </html>
     """
 
 
-# -----------------------------------------------
-# Phase 2.4 – /admin/import-tickets (CSV or JSON)
-# -----------------------------------------------
+# -------- Phase 2.4/3.3/3.4: admin import (admin-only) --------
 
 @app.post("/admin/import-tickets")
 async def import_tickets(
     file: Optional[UploadFile] = File(None),
     tickets: Optional[List[TicketCreate]] = Body(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
 ):
     """
-    Admin endpoint to bulk-import tickets.
-
-    Supports:
-      - CSV file uploaded as "file" (columns: name,email,subject,body,category_hint)
-      - JSON body: list[TicketCreate]
+    Admin-only CSV/JSON ticket import.
     """
     imported = 0
 
-    # Helper to reuse creation logic for each payload
     def create_from_payload(p: TicketCreate):
         nonlocal imported
         ticket = Ticket(
@@ -155,10 +265,8 @@ async def import_tickets(
             ticket.category_pred = p.category_hint
         db.add(ticket)
         imported += 1
-        return ticket
 
     if file is not None:
-        # CSV import
         raw = await file.read()
         try:
             text = raw.decode("utf-8")
@@ -180,7 +288,6 @@ async def import_tickets(
         return JSONResponse({"imported": imported, "source": "csv"})
 
     if tickets is not None:
-        # JSON import: tickets is list[TicketCreate]
         for p in tickets:
             create_from_payload(p)
         db.commit()
@@ -192,8 +299,6 @@ async def import_tickets(
     )
 
 
-# -------------------------------
-# Existing JSON API v1
-# -------------------------------
+# -------- Existing JSON API v1 --------
 
 app.include_router(tickets_router, prefix="/api/v1")
