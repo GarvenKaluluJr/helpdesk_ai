@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+SQLAlchemy>=2.0
+psycopg2-binary
+alembic
+python-dotenv
+email-validator  # used by FastAPI/Pydantic for EmailStr
