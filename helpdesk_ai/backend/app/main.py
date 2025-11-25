@@ -33,6 +33,8 @@ from .schemas.ticket import TicketCreate, TicketRead, TicketUpdate
 import csv
 from io import StringIO
 
+from .ml.predictor import predict_category
+
 
 app = FastAPI(title="AI Helpdesk Ticket Classifier")
 
@@ -522,6 +524,9 @@ async def submit_ticket(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # ML prediction on subject+body
+    pred_category, confidence = predict_category(subject, body)
+
     ticket = Ticket(
         name=name,
         email=email,
@@ -530,8 +535,13 @@ async def submit_ticket(
         status="new",
     )
 
-    if category_hint:
+    if pred_category:
+        ticket.category_pred = pred_category
+        ticket.category_final = pred_category
+        ticket.confidence = confidence
+    elif category_hint:
         ticket.category_pred = category_hint
+        ticket.category_final = category_hint
 
     db.add(ticket)
     db.commit()
@@ -546,13 +556,13 @@ async def submit_ticket(
         <p><strong>ID:</strong> {ticket.id}</p>
         <p><strong>Subject:</strong> {ticket.subject}</p>
         <p><strong>Status:</strong> {ticket.status}</p>
+        <p><strong>Predicted category:</strong> {ticket.category_pred or '—'}
+           (confidence: {ticket.confidence if ticket.confidence is not None else 'N/A'})</p>
         <a href="/">Create another ticket</a><br/>
         <a href="/tickets">Back to dashboard</a>
       </body>
     </html>
     """
-
-
 # =========================
 # Admin CSV/JSON import (admin only)
 # =========================
