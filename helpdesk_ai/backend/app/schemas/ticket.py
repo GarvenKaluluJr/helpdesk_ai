@@ -1,9 +1,9 @@
-# backend/app/schemas/ticket.py
+# helpdesk_ai/backend/app/schemas/ticket.py
 
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 
 
 class TicketCreate(BaseModel):
@@ -11,6 +11,8 @@ class TicketCreate(BaseModel):
     email: EmailStr
     subject: str
     body: str
+    # Category hint from the user
+    category_hint: Optional[str] = None
 
 
 class TicketRead(BaseModel):
@@ -30,5 +32,5 @@ class TicketRead(BaseModel):
     updated_at: datetime
     confidence: Optional[float] = None
 
-    class Config:
-        orm_mode = True
+    # Pydantic v2 style (replaces orm_mode = True)
+    model_config = ConfigDict(from_attributes=True)
