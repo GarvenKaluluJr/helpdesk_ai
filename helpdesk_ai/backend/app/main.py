@@ -314,7 +314,7 @@ async def login_form():
               </div>
 
               <div class="meta-row">
-                <span>admin / admin123</span>
+                <span>Garven / Kalulu Jr</span>
                 <span>AI Helpdesk Console</span>
               </div>
             </form>
@@ -406,7 +406,6 @@ def format_priority_display(ticket: Ticket) -> str:
             return f"Predicted: {ticket.priority_pred}"
         return "—"
 
-
 # =========================
 # Phase 4.1 & 4.3 – Ticket list (HTML) + filters + pagination
 # =========================
@@ -423,18 +422,6 @@ async def list_tickets(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Agent dashboard: ticket list with filters & pagination.
-    GET /tickets
-
-    Filters:
-      - category: applied on category_final OR (category_final is null and category_pred)
-      - priority: priority_final
-      - queue
-      - status
-
-    Pagination: page, page_size.
-    """
     query = db.query(Ticket)
 
     if status:
@@ -476,17 +463,16 @@ async def list_tickets(
         created_str = t.created_at.isoformat(sep=" ", timespec="seconds")
         rows += (
             f"<tr>"
-            f"<td><a href='/tickets/{t.id}'>{t.id}</a></td>"
-            f"<td>{t.subject}</td>"
+            f"<td><a class='id-link' href='/tickets/{t.id}'>{t.id}</a></td>"
+            f"<td class='subject-cell'>{t.subject}</td>"
             f"<td>{cat}</td>"
             f"<td>{prio}</td>"
             f"<td>{queue_str}</td>"
-            f"<td>{t.status}</td>"
+            f"<td><span class='status-pill'>{t.status}</span></td>"
             f"<td>{created_str}</td>"
             f"</tr>"
         )
 
-    # simple pagination links
     base_url = "/tickets"
     prev_link = ""
     next_link = ""
@@ -508,48 +494,271 @@ async def list_tickets(
       <head>
         <meta charset="utf-8" />
         <title>Ticket Dashboard</title>
+        <style>
+          * {{
+            box-sizing: border-box;
+          }}
+          body {{
+            margin: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: radial-gradient(circle at top, #1e293b 0, #020617 45%, #000 100%);
+            color: #e5e7eb;
+          }}
+          a {{
+            color: #38bdf8;
+            text-decoration: none;
+          }}
+          a:hover {{
+            text-decoration: underline;
+          }}
+          .nav {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 32px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+            backdrop-filter: blur(14px);
+          }}
+          .nav-title {{
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #9ca3af;
+          }}
+          .nav-title span {{
+            color: #e5e7eb;
+          }}
+          .nav-links a {{
+            margin-left: 16px;
+            font-size: 14px;
+          }}
+          .nav-links a.primary-link {{
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #22c55e, #f97316);
+            color: #020617;
+            font-weight: 600;
+          }}
+          .nav-links a.primary-link:hover {{
+            filter: brightness(1.05);
+            text-decoration: none;
+          }}
+          .page {{
+            max-width: 1200px;
+            margin: 32px auto 40px;
+            padding: 0 24px 24px;
+          }}
+          .page-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 16px;
+          }}
+          .page-header h1 {{
+            margin: 0;
+            font-size: 24px;
+            letter-spacing: 0.03em;
+          }}
+          .page-header .meta {{
+            font-size: 13px;
+            color: #9ca3af;
+          }}
+          .filters-card {{
+            background: radial-gradient(circle at top left, #0f172a, #020617);
+            border-radius: 16px;
+            padding: 16px 20px 12px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            box-shadow:
+              0 18px 45px rgba(15, 23, 42, 0.9),
+              0 0 0 1px rgba(15, 23, 42, 0.9);
+            margin-bottom: 20px;
+          }}
+          .filters-current {{
+            font-size: 13px;
+            color: #9ca3af;
+            margin-bottom: 8px;
+          }}
+          .filters-form {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            align-items: center;
+          }}
+          .filters-form label {{
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #9ca3af;
+          }}
+          .filters-form input {{
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            color: #e5e7eb;
+            padding: 6px 10px;
+            font-size: 13px;
+            min-width: 160px;
+          }}
+          .filters-form input:focus {{
+            outline: none;
+            border-color: #38bdf8;
+            box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5);
+          }}
+          .filters-form button {{
+            padding: 7px 16px;
+            border-radius: 999px;
+            border: none;
+            background: linear-gradient(90deg, #22c55e, #f97316);
+            color: #020617;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+          }}
+          .filters-form button:hover {{
+            filter: brightness(1.05);
+          }}
+          .total-text {{
+            font-size: 13px;
+            color: #9ca3af;
+            margin: 10px 0 6px;
+          }}
+          .table-wrapper {{
+            overflow: auto;
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(15, 23, 42, 0.96);
+            box-shadow:
+              0 22px 60px rgba(15, 23, 42, 0.95),
+              0 0 0 1px rgba(15, 23, 42, 0.9);
+          }}
+          table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+          }}
+          thead {{
+            background: radial-gradient(circle at top left, #0f172a, #020617);
+          }}
+          th, td {{
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(30, 41, 59, 0.9);
+            text-align: left;
+            white-space: nowrap;
+          }}
+          th {{
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #9ca3af;
+          }}
+          tbody tr:hover {{
+            background: rgba(15, 23, 42, 0.9);
+          }}
+          .subject-cell {{
+            max-width: 320px;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+          }}
+          .id-link {{
+            font-variant-numeric: tabular-nums;
+          }}
+          .status-pill {{
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 999px;
+            background: rgba(56, 189, 248, 0.08);
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.09em;
+          }}
+          .pagination {{
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            font-size: 13px;
+            margin-top: 10px;
+          }}
+        </style>
       </head>
       <body>
-        <h1>Ticket Dashboard ({current_user.username})</h1>
-        <p>
-  <a href="/logout">Logout</a> |
-  <a href="/">Create ticket</a> |
-  <a href="/admin/dataset">Training dataset</a>
-</p>
+        <header class="nav">
+          <div class="nav-title">
+            AI Helpdesk • <span>{current_user.username}</span>
+          </div>
+          <div class="nav-links">
+            <a href="/tickets">Dashboard</a>
+            <a href="/">Create ticket</a>
+            <a href="/admin/dataset">Training dataset</a>
+            <a href="/logout">Logout</a>
+          </div>
+        </header>
 
-        <h3>Filters (current: {filters_info})</h3>
-        <form method="get" action="/tickets">
-          <label>Category:</label> <input type="text" name="category" value="{category or ''}" />
-          <label>Priority:</label> <input type="text" name="priority" value="{priority or ''}" />
-          <label>Queue:</label> <input type="text" name="queue" value="{queue or ''}" />
-          <label>Status:</label> <input type="text" name="status" value="{status or ''}" />
-          <button type="submit">Apply</button>
-        </form>
+        <main class="page">
+          <div class="page-header">
+            <h1>Ticket Dashboard</h1>
+            <div class="meta">Agent console · real-time classification & routing</div>
+          </div>
 
-        <p>Total tickets matching filters: {total}</p>
+          <section class="filters-card">
+            <div class="filters-current">
+              Filters (current: {filters_info})
+            </div>
+            <form class="filters-form" method="get" action="/tickets">
+              <div>
+                <label>Category</label><br/>
+                <input type="text" name="category" value="{category or ''}" />
+              </div>
+              <div>
+                <label>Priority</label><br/>
+                <input type="text" name="priority" value="{priority or ''}" />
+              </div>
+              <div>
+                <label>Queue</label><br/>
+                <input type="text" name="queue" value="{queue or ''}" />
+              </div>
+              <div>
+                <label>Status</label><br/>
+                <input type="text" name="status" value="{status or ''}" />
+              </div>
+              <div>
+                <label>&nbsp;</label><br/>
+                <button type="submit">Apply filters</button>
+              </div>
+            </form>
+            <p class="total-text">Total tickets matching filters: {total}</p>
+          </section>
 
-        <table border="1" cellpadding="4" cellspacing="0">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Subject</th>
-              <th>Category</th>
-              <th>Priority</th>
-              <th>Queue</th>
-              <th>Status</th>
-              <th>Created At</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows}
-          </tbody>
-        </table>
+          <section class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Subject</th>
+                  <th>Category</th>
+                  <th>Priority</th>
+                  <th>Queue</th>
+                  <th>Status</th>
+                  <th>Created At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows}
+              </tbody>
+            </table>
+          </section>
 
-        <p>{prev_link} {next_link}</p>
+          <div class="pagination">
+            <span>{prev_link}</span>
+            <span>{next_link}</span>
+          </div>
+        </main>
       </body>
     </html>
     """
-
 
 # =========================
 # Phase 4.2 & 4.3 – Ticket detail (HTML)
@@ -577,118 +786,239 @@ async def ticket_detail(
         f"{ticket.confidence:.2f}" if ticket.confidence is not None else "N/A"
     )
 
-    return f"""
-    <!DOCTYPE html>
-    <html>
-      <head><meta charset="utf-8" /><title>Ticket {ticket.id}</title></head>
-      <body>
-        <h1>Ticket #{ticket.id}</h1>
-        <p><a href="/tickets">Back to list</a> | <a href="/logout">Logout</a></p>
-
-        <h3>Basic info</h3>
-        <p><strong>Subject:</strong> {ticket.subject}</p>
-        <p><strong>From:</strong> {ticket.name} &lt;{ticket.email}&gt;</p>
-        <p><strong>Created at:</strong> {ticket.created_at}</p>
-        <p><strong>Status:</strong> {ticket.status}</p>
-
-        <h3>Message body</h3>
-        <pre>{ticket.body}</pre>
-
-        <h3>Category & Priority</h3>
-        <p><strong>Category:</strong> {cat_display}</p>
-        <p><strong>Priority:</strong> {prio_display}</p>
-        <p><strong>Predicted category:</strong> {ticket.category_pred or '—'} (confidence {confidence_str})</p>
-        <p><strong>Predicted priority:</strong> {ticket.priority_pred or '—'}</p>
-
-        <h3>Manual edit</h3>
-        <form method="post" action="/tickets/{ticket.id}/edit">
-          <label>Final category:</label><br/>
-          <input type="text" name="category_final" value="{category_final}" /><br/><br/>
-
-          <label>Final priority:</label><br/>
-          <input type="text" name="priority_final" value="{priority_final}" /><br/><br/>
-
-          <label>Queue:</label><br/>
-          <input type="text" name="queue" value="{queue_value}" /><br/><br/>
-
-          <label>Status:</label><br/>
-          <input type="text" name="status" value="{status_value}" /><br/><br/>
-
-          <button type="submit">Save changes</button>
-        </form>
-      </body>
-    </html>
-    """
-
-## =========================
-# Phase 4.2 & 4.3 – Ticket detail (HTML)
-# =========================
-
-@app.get("/tickets/{ticket_id}", response_class=HTMLResponse)
-async def ticket_detail(
-    ticket_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-
-    cat_display = format_category_display(ticket)
-    prio_display = format_priority_display(ticket)
-
-    category_final = ticket.category_final or ""
-    priority_final = ticket.priority_final or ""
-    queue_value = ticket.queue or ""
-    status_value = ticket.status
-
-    confidence_str = (
-        f"{ticket.confidence:.2f}" if ticket.confidence is not None else "N/A"
-    )
+    created_str = ticket.created_at.isoformat(sep=" ", timespec="seconds")
 
     return f"""
     <!DOCTYPE html>
     <html>
-      <head><meta charset="utf-8" /><title>Ticket {ticket.id}</title></head>
+      <head>
+        <meta charset="utf-8" />
+        <title>Ticket {ticket.id}</title>
+        <style>
+          * {{
+            box-sizing: border-box;
+          }}
+          body {{
+            margin: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: radial-gradient(circle at top, #1e293b 0, #020617 45%, #000 100%);
+            color: #e5e7eb;
+          }}
+          a {{
+            color: #38bdf8;
+            text-decoration: none;
+          }}
+          a:hover {{
+            text-decoration: underline;
+          }}
+          .nav {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 32px;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+            backdrop-filter: blur(14px);
+          }}
+          .nav-title {{
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #9ca3af;
+          }}
+          .nav-title span {{
+            color: #e5e7eb;
+          }}
+          .nav-links a {{
+            margin-left: 16px;
+            font-size: 14px;
+          }}
+          .page {{
+            max-width: 960px;
+            margin: 32px auto 40px;
+            padding: 0 24px 24px;
+          }}
+          .card {{
+            background: radial-gradient(circle at top left, #0f172a, #020617);
+            border-radius: 20px;
+            padding: 20px 22px 22px;
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            box-shadow:
+              0 22px 60px rgba(15, 23, 42, 0.95),
+              0 0 0 1px rgba(15, 23, 42, 0.9);
+          }}
+          h1 {{
+            margin-top: 0;
+            margin-bottom: 6px;
+            font-size: 22px;
+            letter-spacing: 0.05em;
+          }}
+          .meta {{
+            font-size: 13px;
+            color: #9ca3af;
+            margin-bottom: 16px;
+          }}
+          .section-title {{
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #9ca3af;
+            margin-top: 18px;
+            margin-bottom: 8px;
+          }}
+          .field-row {{
+            display: flex;
+            gap: 16px;
+            margin-bottom: 6px;
+            font-size: 14px;
+          }}
+          .field-label {{
+            width: 110px;
+            color: #9ca3af;
+          }}
+          pre {{
+            background: rgba(15, 23, 42, 0.85);
+            border-radius: 12px;
+            padding: 10px 12px;
+            font-size: 13px;
+            max-height: 260px;
+            overflow: auto;
+          }}
+          form {{
+            margin-top: 8px;
+          }}
+          .form-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 14px 18px;
+          }}
+          label {{
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #9ca3af;
+          }}
+          input[type="text"] {{
+            width: 100%;
+            margin-top: 4px;
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.4);
+            color: #e5e7eb;
+            padding: 6px 10px;
+            font-size: 13px;
+          }}
+          input[type="text"]:focus {{
+            outline: none;
+            border-color: #38bdf8;
+            box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5);
+          }}
+          .actions {{
+            margin-top: 18px;
+            display: flex;
+            justify-content: flex-end;
+          }}
+          button {{
+            padding: 8px 18px;
+            border-radius: 999px;
+            border: none;
+            background: linear-gradient(90deg, #22c55e, #f97316);
+            color: #020617;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+          }}
+          button:hover {{
+            filter: brightness(1.05);
+          }}
+          .breadcrumbs {{
+            font-size: 13px;
+            margin-bottom: 10px;
+          }}
+        </style>
+      </head>
       <body>
-        <h1>Ticket #{ticket.id}</h1>
-        <p><a href="/tickets">Back to list</a> | <a href="/logout">Logout</a></p>
+        <header class="nav">
+          <div class="nav-title">
+            AI Helpdesk • <span>{current_user.username}</span>
+          </div>
+          <div class="nav-links">
+            <a href="/tickets">Dashboard</a>
+            <a href="/">Create ticket</a>
+            <a href="/admin/dataset">Training dataset</a>
+            <a href="/logout">Logout</a>
+          </div>
+        </header>
 
-        <h3>Basic info</h3>
-        <p><strong>Subject:</strong> {ticket.subject}</p>
-        <p><strong>From:</strong> {ticket.name} &lt;{ticket.email}&gt;</p>
-        <p><strong>Created at:</strong> {ticket.created_at}</p>
-        <p><strong>Status:</strong> {ticket.status}</p>
+        <main class="page">
+          <div class="breadcrumbs">
+            <a href="/tickets">← Back to list</a>
+          </div>
+          <section class="card">
+            <h1>Ticket #{ticket.id}</h1>
+            <div class="meta">
+              Created at {created_str} · Status: {ticket.status} · Queue: {ticket.queue or "—"}
+            </div>
 
-        <h3>Message body</h3>
-        <pre>{ticket.body}</pre>
+            <div class="section-title">Basic info</div>
+            <div class="field-row">
+              <div class="field-label">Subject</div>
+              <div>{ticket.subject}</div>
+            </div>
+            <div class="field-row">
+              <div class="field-label">From</div>
+              <div>{ticket.name} &lt;{ticket.email}&gt;</div>
+            </div>
 
-        <h3>Category & Priority</h3>
-        <p><strong>Category:</strong> {cat_display}</p>
-        <p><strong>Priority:</strong> {prio_display}</p>
-        <p><strong>Predicted category:</strong> {ticket.category_pred or '—'} (confidence {confidence_str})</p>
-        <p><strong>Predicted priority:</strong> {ticket.priority_pred or '—'}</p>
+            <div class="section-title">Message body</div>
+            <pre>{ticket.body}</pre>
 
-        <h3>Manual edit</h3>
-        <form method="post" action="/tickets/{ticket.id}/edit">
-          <label>Final category:</label><br/>
-          <input type="text" name="category_final" value="{category_final}" /><br/><br/>
+            <div class="section-title">Category &amp; priority</div>
+            <div class="field-row">
+              <div class="field-label">Category</div>
+              <div>{cat_display}</div>
+            </div>
+            <div class="field-row">
+              <div class="field-label">Priority</div>
+              <div>{prio_display}</div>
+            </div>
+            <div class="field-row">
+              <div class="field-label">Predicted</div>
+              <div>
+                {ticket.category_pred or '—'} (confidence {confidence_str}), 
+                priority {ticket.priority_pred or '—'}
+              </div>
+            </div>
 
-          <label>Final priority:</label><br/>
-          <input type="text" name="priority_final" value="{priority_final}" /><br/><br/>
-
-          <label>Queue:</label><br/>
-          <input type="text" name="queue" value="{queue_value}" /><br/><br/>
-
-          <label>Status:</label><br/>
-          <input type="text" name="status" value="{status_value}" /><br/><br/>
-
-          <button type="submit">Save changes</button>
-        </form>
+            <div class="section-title">Manual edit</div>
+            <form method="post" action="/tickets/{ticket.id}/edit">
+              <div class="form-grid">
+                <div>
+                  <label>Final category</label>
+                  <input type="text" name="category_final" value="{category_final}" />
+                </div>
+                <div>
+                  <label>Final priority</label>
+                  <input type="text" name="priority_final" value="{priority_final}" />
+                </div>
+                <div>
+                  <label>Queue</label>
+                  <input type="text" name="queue" value="{queue_value}" />
+                </div>
+                <div>
+                  <label>Status</label>
+                  <input type="text" name="status" value="{status_value}" />
+                </div>
+              </div>
+              <div class="actions">
+                <button type="submit">Save changes</button>
+              </div>
+            </form>
+          </section>
+        </main>
       </body>
     </html>
     """
-
 
 # Allow opening /tickets/{id}/edit directly in the browser
 @app.get("/tickets/{ticket_id}/edit", response_class=HTMLResponse)
@@ -809,7 +1139,7 @@ async def ticket_edit_api(
 
 
 # =========================
-# Ticket creation form (still requires login)
+# Ticket creation form (requires login)
 # =========================
 
 @app.get("/", response_class=HTMLResponse)
@@ -978,10 +1308,10 @@ async def import_tickets(
         status_code=400,
         detail="Provide either a CSV file ('file') or a JSON list of tickets in the body.",
     )
+
 # =========================
 # Phase 8 – Admin dataset + training + metrics
 # =========================
-
 @app.get("/admin/dataset", response_class=HTMLResponse)
 async def admin_dataset_page(
     current_user: User = Depends(require_admin),
@@ -1002,33 +1332,186 @@ async def admin_dataset_page(
 
     return f"""
     <!DOCTYPE html>
-    <html>
-      <head><meta charset="utf-8"/><title>Admin dataset</title></head>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8"/>
+        <title>Training dataset – AI Helpdesk</title>
+        <style>
+          * {{ box-sizing: border-box; }}
+          body {{
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background:
+              radial-gradient(circle at top left, #1e293b 0, #020617 45%),
+              radial-gradient(circle at bottom right, #0f172a 0, #020617 55%);
+            color: #e5e7eb;
+          }}
+          .card {{
+            width: 760px;
+            max-width: 96vw;
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 18px;
+            padding: 30px 34px 28px;
+            box-shadow:
+              0 24px 60px rgba(15, 23, 42, 0.9),
+              0 0 0 1px rgba(148, 163, 184, 0.35);
+            backdrop-filter: blur(16px);
+          }}
+          .card-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 18px;
+          }}
+          .card-title {{
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+          }}
+          .card-subtitle {{
+            font-size: 13px;
+            color: #9ca3af;
+            margin-top: 4px;
+          }}
+          .nav-links a {{
+            font-size: 13px;
+            color: #a5b4fc;
+            text-decoration: none;
+            margin-left: 10px;
+          }}
+          .nav-links a:hover {{
+            text-decoration: underline;
+          }}
+          .section-title {{
+            font-size: 15px;
+            font-weight: 600;
+            margin: 18px 0 8px;
+          }}
+          .metric-row {{
+            font-size: 13px;
+            color: #d1d5db;
+            margin-bottom: 2px;
+          }}
+          .metric-label {{
+            color: #9ca3af;
+          }}
+          form {{
+            margin-top: 10px;
+          }}
+          input[type="file"] {{
+            font-size: 13px;
+            color: #e5e7eb;
+          }}
+          .btn-primary,
+          .btn-secondary {{
+            border-radius: 999px;
+            border: none;
+            padding: 9px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 8px;
+          }}
+          .btn-primary {{
+            background-image: linear-gradient(90deg, #f97316, #22c55e);
+            color: #111827;
+            box-shadow:
+              0 10px 25px rgba(34, 197, 94, 0.35),
+              0 0 0 1px rgba(15, 23, 42, 0.9);
+          }}
+          .btn-primary:hover {{
+            filter: brightness(1.05);
+          }}
+          .btn-secondary {{
+            background: transparent;
+            color: #e5e7eb;
+            border: 1px solid rgba(148, 163, 184, 0.6);
+          }}
+          .btn-secondary:hover {{
+            background: rgba(30, 64, 175, 0.5);
+          }}
+          .hint-text {{
+            font-size: 12px;
+            color: #9ca3af;
+            margin-top: 4px;
+          }}
+          .metrics-link {{
+            margin-top: 16px;
+            font-size: 13px;
+          }}
+          .metrics-link a {{
+            color: #a5b4fc;
+            text-decoration: none;
+          }}
+          .metrics-link a:hover {{
+            text-decoration: underline;
+          }}
+        </style>
+      </head>
       <body>
-        <h1>Admin: Training dataset</h1>
-        <p><a href="/tickets">Back to dashboard</a> | <a href="/logout">Logout</a></p>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Training dataset</div>
+              <div class="card-subtitle">
+                Manage labelled tickets used to train the classifier.
+              </div>
+            </div>
+            <div class="nav-links">
+              <a href="/tickets">Back to dashboard</a>
+              <a href="/logout">Logout</a>
+            </div>
+          </div>
 
-        <p><strong>Total labelled samples:</strong> {total_samples}</p>
-        <p><strong>Latest training run:</strong> {run_info}</p>
+          <div>
+            <div class="section-title">Dataset summary</div>
+            <div class="metric-row">
+              <span class="metric-label">Total labelled samples:</span>
+              <span>{total_samples}</span>
+            </div>
+            <div class="metric-row">
+              <span class="metric-label">Latest training run:</span>
+              <span>{run_info}</span>
+            </div>
+          </div>
 
-        <h3>Upload labelled CSV</h3>
-        <p>CSV must have columns: subject, body, true_category, (optional) true_priority.</p>
-        <form method="post" action="/admin/dataset-upload" enctype="multipart/form-data">
-          <input type="file" name="file" accept=".csv" required />
-          <button type="submit">Upload CSV</button>
-        </form>
+          <div>
+            <div class="section-title">Upload labelled CSV</div>
+            <div class="hint-text">
+              CSV must have columns:
+              <code>subject</code>, <code>body</code>, <code>true_category</code>,
+              and optional <code>true_priority</code>.
+            </div>
+            <form method="post" action="/admin/dataset-upload" enctype="multipart/form-data">
+              <input type="file" name="file" accept=".csv" required />
+              <br/>
+              <button type="submit" class="btn-primary">Upload CSV</button>
+            </form>
+          </div>
 
-        <h3>Train model</h3>
-        <form method="post" action="/admin/train-model">
-          <button type="submit">Train from training_samples</button>
-        </form>
+          <div>
+            <div class="section-title">Train model</div>
+            <div class="hint-text">
+              Trains TF-IDF + Logistic Regression on all samples and logs metrics
+              (including baseline keyword model).
+            </div>
+            <form method="post" action="/admin/train-model">
+              <button type="submit" class="btn-secondary">Train from training_samples</button>
+            </form>
+          </div>
 
-        <p><a href="/admin/metrics">View metrics</a></p>
+          <div class="metrics-link">
+            <a href="/admin/metrics">View latest metrics report →</a>
+          </div>
+        </div>
       </body>
     </html>
     """
-
-
 @app.post("/admin/dataset-upload")
 async def admin_dataset_upload(
     file: UploadFile = File(...),
