@@ -154,21 +154,179 @@ def health_check():
 async def login_form():
     return """
     <!DOCTYPE html>
-    <html>
-      <head><meta charset="utf-8" /><title>Login</title></head>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <title>Helpdesk Login</title>
+        <style>
+          * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                         Roboto, sans-serif;
+          }
+
+          body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at top, #1f2937, #020617);
+            color: #e5e7eb;
+          }
+
+          .login-wrapper {
+            width: 100%;
+            max-width: 420px;
+            padding: 32px 24px;
+          }
+
+          .card {
+            background: rgba(15, 23, 42, 0.9);
+            border-radius: 18px;
+            padding: 32px 28px 28px;
+            box-shadow:
+              0 18px 45px rgba(0, 0, 0, 0.55),
+              0 0 0 1px rgba(148, 163, 184, 0.15);
+            backdrop-filter: blur(16px);
+          }
+
+          .card-header {
+            text-align: center;
+            margin-bottom: 24px;
+          }
+
+          .card-title {
+            font-size: 1.6rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+          }
+
+          .card-subtitle {
+            margin-top: 8px;
+            font-size: 0.9rem;
+            color: #9ca3af;
+          }
+
+          .field {
+            margin-bottom: 18px;
+          }
+
+          .field label {
+            display: block;
+            font-size: 0.85rem;
+            margin-bottom: 6px;
+            color: #d1d5db;
+          }
+
+          .field input {
+            width: 100%;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.5);
+            padding: 10px 14px;
+            background: rgba(15, 23, 42, 0.9);
+            color: #e5e7eb;
+            outline: none;
+            font-size: 0.95rem;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease,
+                        background 0.18s ease;
+          }
+
+          .field input:focus {
+            border-color: #22c55e;
+            box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.35);
+            background: rgba(15, 23, 42, 1);
+          }
+
+          .actions {
+            margin-top: 16px;
+          }
+
+          .btn-primary {
+            width: 100%;
+            border: none;
+            border-radius: 999px;
+            padding: 10px 16px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            color: #020617;
+            background: linear-gradient(90deg, #f97316, #22c55e, #06b6d4);
+            background-size: 200% 100%;
+            transition: transform 0.12s ease, box-shadow 0.12s ease,
+                        background-position 0.35s ease;
+            box-shadow: 0 12px 30px rgba(34, 197, 94, 0.3);
+          }
+
+          .btn-primary:hover {
+            background-position: 100% 0;
+            transform: translateY(-1px);
+            box-shadow: 0 16px 36px rgba(34, 197, 94, 0.4);
+          }
+
+          .meta-row {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 16px;
+            font-size: 0.8rem;
+            color: #9ca3af;
+          }
+
+          .meta-row span {
+            opacity: 0.9;
+          }
+
+          .brand {
+            margin-top: 18px;
+            text-align: center;
+            font-size: 0.75rem;
+            color: #6b7280;
+          }
+
+          .brand strong {
+            color: #a5b4fc;
+          }
+        </style>
+      </head>
       <body>
-        <h1>Helpdesk login</h1>
-        <form method="post" action="/login">
-          <label>Username:</label><br />
-          <input type="text" name="username" required /><br /><br />
-          <label>Password:</label><br />
-          <input type="password" name="password" required /><br /><br />
-          <button type="submit">Login</button>
-        </form>
+        <div class="login-wrapper">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Helpdesk Login</div>
+              <p class="card-subtitle">Sign in to manage and triage tickets.</p>
+            </div>
+
+            <form method="post" action="/login">
+              <div class="field">
+                <label for="username">Username</label>
+                <input id="username" name="username" type="text" required />
+              </div>
+
+              <div class="field">
+                <label for="password">Password</label>
+                <input id="password" name="password" type="password" required />
+              </div>
+
+              <div class="actions">
+                <button class="btn-primary" type="submit">Sign in</button>
+              </div>
+
+              <div class="meta-row">
+                <span>admin / admin123</span>
+                <span>AI Helpdesk Console</span>
+              </div>
+            </form>
+          </div>
+
+          <p class="brand">
+            Powered by <strong>AI Helpdesk Ticket Classifier</strong>
+          </p>
+        </div>
       </body>
     </html>
     """
-
 
 @app.post("/login", response_class=HTMLResponse)
 async def login(
