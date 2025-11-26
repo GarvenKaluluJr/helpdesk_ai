@@ -462,12 +462,92 @@ async def ticket_detail(
     </html>
     """
 
+## =========================
+# Phase 4.2 & 4.3 – Ticket detail (HTML)
+# =========================
+
+@app.get("/tickets/{ticket_id}", response_class=HTMLResponse)
+async def ticket_detail(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+
+    cat_display = format_category_display(ticket)
+    prio_display = format_priority_display(ticket)
+
+    category_final = ticket.category_final or ""
+    priority_final = ticket.priority_final or ""
+    queue_value = ticket.queue or ""
+    status_value = ticket.status
+
+    confidence_str = (
+        f"{ticket.confidence:.2f}" if ticket.confidence is not None else "N/A"
+    )
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="utf-8" /><title>Ticket {ticket.id}</title></head>
+      <body>
+        <h1>Ticket #{ticket.id}</h1>
+        <p><a href="/tickets">Back to list</a> | <a href="/logout">Logout</a></p>
+
+        <h3>Basic info</h3>
+        <p><strong>Subject:</strong> {ticket.subject}</p>
+        <p><strong>From:</strong> {ticket.name} &lt;{ticket.email}&gt;</p>
+        <p><strong>Created at:</strong> {ticket.created_at}</p>
+        <p><strong>Status:</strong> {ticket.status}</p>
+
+        <h3>Message body</h3>
+        <pre>{ticket.body}</pre>
+
+        <h3>Category & Priority</h3>
+        <p><strong>Category:</strong> {cat_display}</p>
+        <p><strong>Priority:</strong> {prio_display}</p>
+        <p><strong>Predicted category:</strong> {ticket.category_pred or '—'} (confidence {confidence_str})</p>
+        <p><strong>Predicted priority:</strong> {ticket.priority_pred or '—'}</p>
+
+        <h3>Manual edit</h3>
+        <form method="post" action="/tickets/{ticket.id}/edit">
+          <label>Final category:</label><br/>
+          <input type="text" name="category_final" value="{category_final}" /><br/><br/>
+
+          <label>Final priority:</label><br/>
+          <input type="text" name="priority_final" value="{priority_final}" /><br/><br/>
+
+          <label>Queue:</label><br/>
+          <input type="text" name="queue" value="{queue_value}" /><br/><br/>
+
+          <label>Status:</label><br/>
+          <input type="text" name="status" value="{status_value}" /><br/><br/>
+
+          <button type="submit">Save changes</button>
+        </form>
+      </body>
+    </html>
+    """
+
+
+# Allow opening /tickets/{id}/edit directly in the browser
+@app.get("/tickets/{ticket_id}/edit", response_class=HTMLResponse)
+async def ticket_edit_get(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Re-use the same detail renderer (shows the form)
+    return await ticket_detail(ticket_id=ticket_id, current_user=current_user, db=db)
+
 
 # =========================
 # Phase 4.4 – HTML edit + ticket_history
 # =========================
 
-@app.post("/tickets/{ticket_id}/edit", response_class=HTMLResponse)
+@app.post("/tickets/{ticket_id}/edit")
 async def ticket_edit_html(
     ticket_id: int,
     category_final: Optional[str] = Form(None),
@@ -480,31 +560,44 @@ async def ticket_edit_html(
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    
-    changes = {}
 
-    def maybe_update(field: str, new_val: Optional[str]):
-        if new_val is None:
+    changes: dict = {}
+
+    def maybe_update(field: str, raw_value: Optional[str], validator=None):
+        if raw_value is None:
             return
-
-        # Empty string from the form means "clear this field"
-        if not new_val.strip():
-            new_val_clean = None
+        # normalize/validate
+        if validator is not None:
+            new_val = validator(raw_value)
         else:
-            raw = new_val.strip()
-            if field == "category_final":
-                new_val_clean = validate_category_final(raw)
-            elif field == "priority_final":
-                new_val_clean = validate_priority_final(raw)
-            elif field == "queue":
-                new_val_clean = validate_queue(raw)
-            else:
-                new_val_clean = raw
-
+            new_val = raw_value.strip() or None
         old_val = getattr(ticket, field)
-        if old_val != new_val_clean:
-            setattr(ticket, field, new_val_clean)
-            changes[field] = (old_val, new_val_clean)
+        if old_val != new_val:
+            setattr(ticket, field, new_val)
+            changes[field] = (old_val, new_val)
+
+    # Use the Phase-9 validators for consistency
+    maybe_update("category_final", category_final, validator=validate_category_final)
+    maybe_update("priority_final", priority_final, validator=validate_priority_final)
+    maybe_update("queue", queue, validator=validate_queue)
+    if status is not None:
+        maybe_update("status", status)
+
+    # Log changes into ticket_history
+    for field, (old, new) in changes.items():
+        history = TicketHistory(
+            ticket_id=ticket.id,
+            field=field,
+            old_value=old if old is not None else "",
+            new_value=new if new is not None else "",
+            changed_by=current_user.id,
+        )
+        db.add(history)
+
+    db.commit()
+
+    # After POST, always go back to the detail page (no blank /edit)
+    return RedirectResponse(url=f"/tickets/{ticket_id}", status_code=303)
 
 # =========================
 # Phase 4.4 – JSON PATCH /tickets/{id}
