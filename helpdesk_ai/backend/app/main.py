@@ -1,5 +1,6 @@
 # helpdesk_ai/backend/app/main.py
 
+
 from typing import List, Optional
 
 from fastapi import (
@@ -31,12 +32,17 @@ from .models.user import User
 from .schemas.ticket import TicketCreate, TicketRead, TicketUpdate
 
 import csv
+import json   
 from io import StringIO
 
+from .models.training_sample import TrainingSample   
+from .models.training_run import TrainingRun         
+from .ml.train_classifier import train_and_save_from_db  
 from .ml.predictor import predict_category, compute_priority, route_to_queue, PREDICTOR_LOADED
 
 from pydantic import EmailStr
 app = FastAPI(title="AI Helpdesk Ticket Classifier")
+
 
 
 # =========================
@@ -272,8 +278,11 @@ async def list_tickets(
       </head>
       <body>
         <h1>Ticket Dashboard ({current_user.username})</h1>
-        <p><a href="/logout">Logout</a> | <a href="/">Create ticket</a></p>
-
+                <p>
+          <a href="/logout">Logout</a> |
+          <a href="/">Create ticket</a> |
+          <a href="/admin/dataset">Training dataset</a>
+        </p>
         <h3>Filters (current: {filters_info})</h3>
         <form method="get" action="/tickets">
           <label>Category:</label> <input type="text" name="category" value="{category or ''}" />
@@ -629,7 +638,200 @@ async def import_tickets(
         status_code=400,
         detail="Provide either a CSV file ('file') or a JSON list of tickets in the body.",
     )
+# =========================
+# Phase 8 – Admin dataset + training + metrics
+# =========================
 
+@app.get("/admin/dataset", response_class=HTMLResponse)
+async def admin_dataset_page(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    total_samples = db.query(TrainingSample).count()
+    last_run = db.query(TrainingRun).order_by(TrainingRun.run_at.desc()).first()
+
+    if last_run:
+        run_info = (
+            f"Last run at {last_run.run_at}, "
+            f"ML acc={last_run.accuracy_ml:.3f}, macro F1={last_run.macro_f1_ml:.3f}; "
+            f"baseline acc={last_run.accuracy_baseline:.3f}, "
+            f"macro F1={last_run.macro_f1_baseline:.3f}"
+        )
+    else:
+        run_info = "No training runs yet."
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="utf-8"/><title>Admin dataset</title></head>
+      <body>
+        <h1>Admin: Training dataset</h1>
+        <p><a href="/tickets">Back to dashboard</a> | <a href="/logout">Logout</a></p>
+
+        <p><strong>Total labelled samples:</strong> {total_samples}</p>
+        <p><strong>Latest training run:</strong> {run_info}</p>
+
+        <h3>Upload labelled CSV</h3>
+        <p>CSV must have columns: subject, body, true_category, (optional) true_priority.</p>
+        <form method="post" action="/admin/dataset-upload" enctype="multipart/form-data">
+          <input type="file" name="file" accept=".csv" required />
+          <button type="submit">Upload CSV</button>
+        </form>
+
+        <h3>Train model</h3>
+        <form method="post" action="/admin/train-model">
+          <button type="submit">Train from training_samples</button>
+        </form>
+
+        <p><a href="/admin/metrics">View metrics</a></p>
+      </body>
+    </html>
+    """
+
+
+@app.post("/admin/dataset-upload")
+async def admin_dataset_upload(
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Phase 8.1 upload labelled dataset.
+    CSV headers: subject, body, true_category, (optional) true_priority
+    """
+    raw = await file.read()
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded")
+
+    reader = csv.DictReader(StringIO(text))
+    required = {"subject", "body", "true_category"}
+    if not required.issubset(set(reader.fieldnames or [])):
+        raise HTTPException(
+            status_code=400,
+            detail="CSV must contain columns: subject, body, true_category",
+        )
+
+    imported = 0
+    for row in reader:
+        sample = TrainingSample(
+            subject=row["subject"],
+            body=row["body"],
+            true_category=row["true_category"],
+            true_priority=row.get("true_priority"),
+        )
+        db.add(sample)
+        imported += 1
+
+    db.commit()
+    return RedirectResponse(
+        url=f"/admin/dataset?imported={imported}",
+        status_code=303,
+    )
+
+
+@app.post("/admin/train-model", response_class=HTMLResponse)
+async def admin_train_model(
+    current_user: User = Depends(require_admin),
+):
+    """
+    Phase 8.2 train model from training_samples.
+    Calls train_and_save_from_db(), which writes metrics into training_runs.
+    """
+    metrics = train_and_save_from_db()
+    if metrics is None:
+        return HTMLResponse(
+            "<h1>No training samples found.</h1>"
+            "<p>Upload a labelled CSV on <a href='/admin/dataset'>/admin/dataset</a> first.</p>",
+            status_code=400,
+        )
+
+    # After training, redirect to metrics page
+    return RedirectResponse(url="/admin/metrics", status_code=303)
+
+
+@app.get("/admin/metrics", response_class=HTMLResponse)
+async def admin_metrics(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Phase 8.3 – show metrics of the latest training run:
+    accuracy, precision, recall, F1 per category (for ML model).
+    Also shows baseline summary.
+    """
+    run = db.query(TrainingRun).order_by(TrainingRun.run_at.desc()).first()
+    if not run:
+        return HTMLResponse(
+            "<h1>No training runs yet</h1>"
+            "<p>Go to <a href='/admin/dataset'>/admin/dataset</a> and train a model.</p>",
+            status_code=200,
+        )
+
+    metrics = run.get_report()
+    ml = metrics.get("ml", {})
+    baseline = metrics.get("baseline", {})
+
+    ml_accuracy = ml.get("accuracy", 0.0)
+    ml_macro_f1 = ml.get("macro_f1", 0.0)
+    base_accuracy = baseline.get("accuracy", 0.0)
+    base_macro_f1 = baseline.get("macro_f1", 0.0)
+
+    ml_report = ml.get("report", {})
+
+    # Build per-category table for ML model
+    skip_keys = {"accuracy", "macro avg", "weighted avg"}
+    rows = ""
+    for label, stats in ml_report.items():
+        if label in skip_keys:
+            continue
+        prec = stats.get("precision", 0.0)
+        rec = stats.get("recall", 0.0)
+        f1 = stats.get("f1-score", 0.0)
+        support = stats.get("support", 0)
+        rows += (
+            f"<tr><td>{label}</td>"
+            f"<td>{prec:.2f}</td>"
+            f"<td>{rec:.2f}</td>"
+            f"<td>{f1:.2f}</td>"
+            f"<td>{support}</td></tr>"
+        )
+
+    return f"""
+    <!DOCTYPE html>
+    <html>
+      <head><meta charset="utf-8"/><title>ML metrics</title></head>
+      <body>
+        <h1>Admin: Model metrics (latest run)</h1>
+        <p><a href="/admin/dataset">Back to dataset</a> |
+           <a href="/tickets">Dashboard</a> |
+           <a href="/logout">Logout</a></p>
+
+        <h3>Overall metrics</h3>
+        <p><strong>ML accuracy:</strong> {ml_accuracy:.3f}</p>
+        <p><strong>ML macro F1:</strong> {ml_macro_f1:.3f}</p>
+        <p><strong>Baseline accuracy:</strong> {base_accuracy:.3f}</p>
+        <p><strong>Baseline macro F1:</strong> {base_macro_f1:.3f}</p>
+
+        <h3>Per-category metrics (ML model)</h3>
+        <table border="1" cellpadding="4" cellspacing="0">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Precision</th>
+              <th>Recall</th>
+              <th>F1-score</th>
+              <th>Support</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows}
+          </tbody>
+        </table>
+      </body>
+    </html>
+    """
 
 # =========================
 # Existing JSON API v1
