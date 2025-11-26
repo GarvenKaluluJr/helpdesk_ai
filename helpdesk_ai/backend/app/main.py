@@ -43,7 +43,82 @@ from .ml.predictor import predict_category, compute_priority, route_to_queue, PR
 from pydantic import EmailStr
 app = FastAPI(title="AI Helpdesk Ticket Classifier")
 
+# =========================
+# Phase 9 – Allowed values & validators
+# =========================
 
+# These are the canonical labels used everywhere in the project
+ALLOWED_CATEGORIES = ["Account", "Administration", "Financy", "General", "Technical"]
+ALLOWED_PRIORITIES = ["Low", "Medium", "High"]
+ALLOWED_QUEUES = ["IT", "Finance", "Admissions", "General"]
+
+_CATEGORY_CANON = {c.lower(): c for c in ALLOWED_CATEGORIES}
+_PRIORITY_CANON = {p.lower(): p for p in ALLOWED_PRIORITIES}
+_QUEUE_CANON = {q.lower(): q for q in ALLOWED_QUEUES}
+
+
+def validate_category_final(value: Optional[str]) -> Optional[str]:
+    """
+    Normalize + validate category_final coming from UI / API.
+    Empty string -> None. Case-insensitive.
+    """
+    if value is None:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    key = raw.lower()
+    if key not in _CATEGORY_CANON:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid category_final '{raw}'. "
+                f"Allowed: {', '.join(ALLOWED_CATEGORIES)}"
+            ),
+        )
+    return _CATEGORY_CANON[key]
+
+
+def validate_priority_final(value: Optional[str]) -> Optional[str]:
+    """
+    Normalize + validate priority_final. Case-insensitive.
+    """
+    if value is None:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    key = raw.lower()
+    if key not in _PRIORITY_CANON:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid priority_final '{raw}'. "
+                f"Allowed: {', '.join(ALLOWED_PRIORITIES)}"
+            ),
+        )
+    return _PRIORITY_CANON[key]
+
+
+def validate_queue(value: Optional[str]) -> Optional[str]:
+    """
+    Normalize + validate queue name. Case-insensitive.
+    """
+    if value is None:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    key = raw.lower()
+    if key not in _QUEUE_CANON:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid queue '{raw}'. "
+                f"Allowed: {', '.join(ALLOWED_QUEUES)}"
+            ),
+        )
+    return _QUEUE_CANON[key]
 
 # =========================
 # Phase 3.1 – seed admin
@@ -278,11 +353,12 @@ async def list_tickets(
       </head>
       <body>
         <h1>Ticket Dashboard ({current_user.username})</h1>
-                <p>
-          <a href="/logout">Logout</a> |
-          <a href="/">Create ticket</a> |
-          <a href="/admin/dataset">Training dataset</a>
-        </p>
+        <p>
+  <a href="/logout">Logout</a> |
+  <a href="/">Create ticket</a> |
+  <a href="/admin/dataset">Training dataset</a>
+</p>
+
         <h3>Filters (current: {filters_info})</h3>
         <form method="get" action="/tickets">
           <label>Category:</label> <input type="text" name="category" value="{category or ''}" />
@@ -404,39 +480,31 @@ async def ticket_edit_html(
     ticket = db.query(Ticket).filter(Ticket.id == ticket_id).first()
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
-
+    
     changes = {}
 
     def maybe_update(field: str, new_val: Optional[str]):
         if new_val is None:
             return
-        # treat empty string as clearing the field
-        new_val_clean = new_val.strip() or None
+
+        # Empty string from the form means "clear this field"
+        if not new_val.strip():
+            new_val_clean = None
+        else:
+            raw = new_val.strip()
+            if field == "category_final":
+                new_val_clean = validate_category_final(raw)
+            elif field == "priority_final":
+                new_val_clean = validate_priority_final(raw)
+            elif field == "queue":
+                new_val_clean = validate_queue(raw)
+            else:
+                new_val_clean = raw
+
         old_val = getattr(ticket, field)
         if old_val != new_val_clean:
             setattr(ticket, field, new_val_clean)
             changes[field] = (old_val, new_val_clean)
-
-    maybe_update("category_final", category_final)
-    maybe_update("priority_final", priority_final)
-    maybe_update("queue", queue)
-    if status:  # status shouldn't be cleared silently
-        maybe_update("status", status)
-
-    for field, (old, new) in changes.items():
-        history = TicketHistory(
-            ticket_id=ticket.id,
-            field=field,
-            old_value=old if old is not None else "",
-            new_value=new if new is not None else "",
-            changed_by=current_user.id,
-        )
-        db.add(history)
-
-    db.commit()
-
-    return RedirectResponse(url=f"/tickets/{ticket_id}", status_code=302)
-
 
 # =========================
 # Phase 4.4 – JSON PATCH /tickets/{id}
@@ -461,6 +529,14 @@ async def ticket_edit_api(
     data = payload.model_dump(exclude_unset=True)
 
     for field, new_val in data.items():
+        # Normalize + validate same as HTML form
+        if field == "category_final":
+            new_val = validate_category_final(new_val)
+        elif field == "priority_final":
+            new_val = validate_priority_final(new_val)
+        elif field == "queue":
+            new_val = validate_queue(new_val)
+
         old_val = getattr(ticket, field)
         if old_val != new_val:
             setattr(ticket, field, new_val)
@@ -533,19 +609,32 @@ async def submit_ticket(
 ):
     full_text = f"{subject}\n{body}"
 
-    # ML category prediction
+        # ML category prediction
     predicted_category: Optional[str] = None
     confidence: Optional[float] = None
     if PREDICTOR_LOADED:
         predicted_category, confidence = predict_category(full_text)
 
-    # Auto priority
-    priority_pred = compute_priority(full_text, predicted_category)
-    priority_final = priority_pred
+    # Normalize / fallback for category_final:
+    # if ML gives an unknown label, we fall back to "General"
+    if predicted_category and predicted_category.strip().lower() in _CATEGORY_CANON:
+        category_final = _CATEGORY_CANON[predicted_category.strip().lower()]
+    elif predicted_category:
+        # Unknown category from model → treat as General, but keep raw in category_pred
+        category_final = "General"
+    else:
+        category_final = None
 
-    # Auto queue routing (Phase 7)
-    category_final = predicted_category
-    queue_value = route_to_queue(category_final)
+    # Auto priority (normalize to canonical form)
+    priority_pred = compute_priority(full_text, predicted_category)
+    priority_final = _PRIORITY_CANON.get(
+        (priority_pred or "").lower(),
+        "Low",  # safe default
+    )
+
+    # Auto queue routing (Phase 7, normalized)
+    queue_raw = route_to_queue(category_final)
+    queue_value = _QUEUE_CANON.get((queue_raw or "").lower(), "General")
 
     ticket = Ticket(
         name=name,
