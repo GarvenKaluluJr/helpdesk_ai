@@ -1,46 +1,80 @@
 # helpdesk_ai/backend/app/ml/predictor.py
-
 from pathlib import Path
 from typing import Optional, Tuple
 
 import joblib
 
-MODEL_PATH = Path(__file__).resolve().parent / "models" / "ticket_category_model.joblib"
-
-_pipeline = None
-
-
-def _load_model():
-    global _pipeline
-    if MODEL_PATH.exists():
-        _pipeline = joblib.load(MODEL_PATH)
-        print(f"[ML] Loaded ticket classifier from {MODEL_PATH}")
-    else:
-        _pipeline = None
-        print("[ML] No classifier model found yet.")
+MODEL_DIR = Path(__file__).resolve().parent / "models"
+MODEL_PATH = MODEL_DIR / "ticket_category_model.joblib"
 
 
-_load_model()
+class TicketCategoryPredictor:
+    def __init__(self) -> None:
+        self.pipeline = None
+        self._load()
+
+    def _load(self) -> None:
+        if MODEL_PATH.exists():
+            self.pipeline = joblib.load(MODEL_PATH)
+            print(f"[ML] Loaded ticket classifier from {MODEL_PATH}")
+        else:
+            print("[ML] No classifier model found yet.")
+            self.pipeline = None
+
+    def predict(self, text: str) -> Tuple[Optional[str], Optional[float]]:
+        if not self.pipeline:
+            return None, None
+        probs = self.pipeline.predict_proba([text])[0]
+        idx = probs.argmax()
+        label = self.pipeline.classes_[idx]
+        confidence = float(probs[idx])
+        return str(label), confidence
 
 
-def predict_category(subject: str, body: str) -> Tuple[Optional[str], Optional[float]]:
+predictor = TicketCategoryPredictor()
+
+
+def compute_priority(text: str, predicted_category: Optional[str]) -> str:
     """
-    Returns (predicted_category, confidence) or (None, None) if model not available.
-    Confidence is the max predicted probability in [0,1].
+    Simple rule-based priority:
+
+    High:
+      - text contains "urgent", "cannot log", "exam", "deadline today", "system down", etc.
+    Medium:
+      - non-urgent but category is technical/account/finance-like.
+    Low:
+      - everything else.
     """
-    if _pipeline is None:
-        return None, None
+    txt = (text or "").lower()
 
-    text = f"{subject or ''} {body or ''}".strip()
-    if not text:
-        return None, None
+    urgent_keywords = [
+        "urgent",
+        "asap",
+        "immediately",
+        "cannot log",
+        "can't log",
+        "cant log",
+        "login problem",
+        "log in problem",
+        "system down",
+        "server down",
+        "not working",
+        "exam",
+        "examination",
+        "deadline today",
+        "due today",
+    ]
+    if any(k in txt for k in urgent_keywords):
+        return "high"
 
-    proba = _pipeline.predict_proba([text])[0]
-    classes = _pipeline.classes_
+    high_importance_categories = {
+        "Account",
+        "Technical",
+        "Financy",   # your current spelling in data
+        "Finance",
+        "IT",
+    }
+    if predicted_category in high_importance_categories:
+        return "medium"
 
-    # index of max probability
-    best_idx = max(range(len(proba)), key=lambda i: proba[i])
-    label = classes[best_idx]
-    confidence = float(proba[best_idx])
-
-    return label, confidence
+    return "low"

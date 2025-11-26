@@ -33,8 +33,9 @@ from .schemas.ticket import TicketCreate, TicketRead, TicketUpdate
 import csv
 from io import StringIO
 
-from .ml.predictor import predict_category
+from .ml.predictor import predictor, compute_priority
 
+from pydantic import EmailStr
 
 app = FastAPI(title="AI Helpdesk Ticket Classifier")
 
@@ -516,16 +517,27 @@ async def ticket_form(current_user: User = Depends(get_current_user)):
 
 @app.post("/tickets", response_class=HTMLResponse)
 async def submit_ticket(
+    request: Request,
     name: str = Form(...),
-    email: str = Form(...),
+    email: EmailStr = Form(...),
     subject: str = Form(...),
     body: str = Form(...),
-    category_hint: Optional[str] = Form(None),
-    current_user: User = Depends(get_current_user),
+    category_hint: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    # ML prediction on subject+body
-    pred_category, confidence = predict_category(subject, body)
+    text = f"{subject or ''} {body or ''}".strip()
+
+    # ML category prediction
+    category_pred, confidence = (None, None)
+    if text:
+        category_pred, confidence = predictor.predict(text)
+
+    # If ML gave nothing, fall back to hint (if any)
+    category_final = category_pred or (category_hint or None)
+
+    # Rule-based priority
+    priority_pred = compute_priority(text, category_pred)
+    priority_final = priority_pred
 
     ticket = Ticket(
         name=name,
@@ -533,36 +545,32 @@ async def submit_ticket(
         subject=subject,
         body=body,
         status="new",
+        category_pred=category_pred,
+        category_final=category_final,
+        confidence=confidence,
+        priority_pred=priority_pred,
+        priority_final=priority_final,
     )
-
-    if pred_category:
-        ticket.category_pred = pred_category
-        ticket.category_final = pred_category
-        ticket.confidence = confidence
-    elif category_hint:
-        ticket.category_pred = category_hint
-        ticket.category_final = category_hint
-
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
 
-    return f"""
-    <!DOCTYPE html>
+    html = f"""
     <html>
-      <head><meta charset="utf-8" /><title>Ticket created</title></head>
+      <head><title>Ticket created</title></head>
       <body>
-        <h2>Ticket created successfully</h2>
+        <h1>Ticket created successfully</h1>
         <p><strong>ID:</strong> {ticket.id}</p>
         <p><strong>Subject:</strong> {ticket.subject}</p>
         <p><strong>Status:</strong> {ticket.status}</p>
-        <p><strong>Predicted category:</strong> {ticket.category_pred or '—'}
-           (confidence: {ticket.confidence if ticket.confidence is not None else 'N/A'})</p>
-        <a href="/">Create another ticket</a><br/>
-        <a href="/tickets">Back to dashboard</a>
+        <p><strong>Predicted category:</strong> {ticket.category_pred} (confidence: {ticket.confidence})</p>
+        <p><strong>Predicted priority:</strong> {ticket.priority_pred}</p>
+        <p><a href="/">Create another ticket</a></p>
+        <p><a href="/tickets">Back to dashboard</a></p>
       </body>
     </html>
     """
+    return HTMLResponse(html)
 # =========================
 # Admin CSV/JSON import (admin only)
 # =========================
