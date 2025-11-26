@@ -33,10 +33,9 @@ from .schemas.ticket import TicketCreate, TicketRead, TicketUpdate
 import csv
 from io import StringIO
 
-from .ml.predictor import predictor, compute_priority
+from .ml.predictor import predict_category, compute_priority, route_to_queue, PREDICTOR_LOADED
 
 from pydantic import EmailStr
-
 app = FastAPI(title="AI Helpdesk Ticket Classifier")
 
 
@@ -514,7 +513,6 @@ async def ticket_form(current_user: User = Depends(get_current_user)):
     </html>
     """
 
-
 @app.post("/tickets", response_class=HTMLResponse)
 async def submit_ticket(
     request: Request,
@@ -522,34 +520,36 @@ async def submit_ticket(
     email: EmailStr = Form(...),
     subject: str = Form(...),
     body: str = Form(...),
-    category_hint: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    text = f"{subject or ''} {body or ''}".strip()
+    full_text = f"{subject}\n{body}"
 
     # ML category prediction
-    category_pred, confidence = (None, None)
-    if text:
-        category_pred, confidence = predictor.predict(text)
+    predicted_category: Optional[str] = None
+    confidence: Optional[float] = None
+    if PREDICTOR_LOADED:
+        predicted_category, confidence = predict_category(full_text)
 
-    # If ML gave nothing, fall back to hint (if any)
-    category_final = category_pred or (category_hint or None)
-
-    # Rule-based priority
-    priority_pred = compute_priority(text, category_pred)
+    # Auto priority
+    priority_pred = compute_priority(full_text, predicted_category)
     priority_final = priority_pred
+
+    # Auto queue routing (Phase 7)
+    category_final = predicted_category
+    queue_value = route_to_queue(category_final)
 
     ticket = Ticket(
         name=name,
         email=email,
         subject=subject,
         body=body,
-        status="new",
-        category_pred=category_pred,
+        category_pred=predicted_category,
         category_final=category_final,
-        confidence=confidence,
         priority_pred=priority_pred,
         priority_final=priority_final,
+        queue=queue_value,
+        status="new",
+        confidence=confidence,
     )
     db.add(ticket)
     db.commit()
@@ -557,21 +557,21 @@ async def submit_ticket(
 
     html = f"""
     <html>
-      <head><title>Ticket created</title></head>
       <body>
         <h1>Ticket created successfully</h1>
         <p><strong>ID:</strong> {ticket.id}</p>
         <p><strong>Subject:</strong> {ticket.subject}</p>
-        <p><strong>Status:</strong> {ticket.status}</p>
-        <p><strong>Predicted category:</strong> {ticket.category_pred} (confidence: {ticket.confidence})</p>
-        <p><strong>Predicted priority:</strong> {ticket.priority_pred}</p>
-        <p><a href="/">Create another ticket</a></p>
-        <p><a href="/tickets">Back to dashboard</a></p>
+        <p><strong>Category:</strong> {ticket.category_final or ticket.category_pred or "—"}</p>
+        <p><strong>Priority:</strong> {ticket.priority_final or ticket.priority_pred or "—"}</p>
+        <p><strong>Queue:</strong> {ticket.queue or "—"}</p>
+        <p><a href="/tickets">Back to dashboard</a> | <a href="/">Create another ticket</a></p>
       </body>
     </html>
     """
     return HTMLResponse(html)
-# =========================
+
+
+#====================
 # Admin CSV/JSON import (admin only)
 # =========================
 
