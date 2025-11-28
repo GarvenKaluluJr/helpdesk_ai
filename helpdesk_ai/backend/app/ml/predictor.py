@@ -13,7 +13,7 @@ MODEL_PATH = (
 )
 
 # This will hold either:
-#  - a sklearn Pipeline (TF-IDF + LogisticRegression), OR
+#  - a sklearn Pipeline (TF-IDF + LogisticRegression), OR/AND
 #  - a small wrapper around the old {"vectorizer": ..., "classifier": ...} dict.
 _classifier: Any = None
 PREDICTOR_LOADED: bool = False  # main.py imports this
@@ -23,7 +23,7 @@ class _DictModelWrapper:
     """
     Backwards-compatibility wrapper for old saved models in the form:
       {"vectorizer": tfidf, "classifier": clf}
-    so that predict_category() keeps working after Phase 8.
+    so that predict_category() keeps working after Phase 8
     """
 
     def __init__(self, vectorizer, classifier):
@@ -58,7 +58,7 @@ def _load_model() -> None:
     try:
         obj = joblib.load(MODEL_PATH)
 
-        # New preferred format: sklearn Pipeline
+        # Preferred format: sklearn Pipeline
         if hasattr(obj, "predict"):
             _classifier = obj
 
@@ -98,7 +98,7 @@ def predict_category(text: str) -> Tuple[Optional[str], Optional[float]]:
         return None, None
 
     try:
-        # Use probabilities if the model supports them
+        # Use probabilities
         if hasattr(_classifier, "predict_proba"):
             probs = _classifier.predict_proba([text])[0]
             # sklearn classifiers expose `classes_`
@@ -128,7 +128,7 @@ def compute_priority(text: str, category: Optional[str]) -> str:
       - Medium: technical/account/finance/admin without urgent flags.
       - Low: everything else.
 
-    This is intentionally simple for the project – the ML part is only for category.
+    This is intentionally simple for the project the ML part is only for category.
     """
     t = (text or "").lower()
     cat = (category or "").lower()
