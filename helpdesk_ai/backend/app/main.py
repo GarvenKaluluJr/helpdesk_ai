@@ -1,6 +1,4 @@
 # helpdesk_ai/backend/app/main.py
-
-
 from typing import List, Optional
 
 from fastapi import (
@@ -43,10 +41,7 @@ from .ml.predictor import predict_category, compute_priority, route_to_queue, PR
 from pydantic import EmailStr
 app = FastAPI(title="AI Helpdesk Ticket Classifier")
 
-# =========================
-# Phase 9 – Allowed values & validators
-# =========================
-
+# Allowed values & validators
 # These are the canonical labels used everywhere in the project
 ALLOWED_CATEGORIES = ["Account", "Administration", "Financy", "General", "Technical"]
 ALLOWED_PRIORITIES = ["Low", "Medium", "High"]
@@ -120,9 +115,8 @@ def validate_queue(value: Optional[str]) -> Optional[str]:
         )
     return _QUEUE_CANON[key]
 
-# =========================
-# Phase 3.1 – seed admin
-# =========================
+
+#Seed admin
 
 @app.on_event("startup")
 def seed_initial_users():
@@ -146,9 +140,8 @@ def health_check():
     return {"status": "ok"}
 
 
-# =========================
+
 # Login / Logout
-# =========================
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_form():
@@ -360,18 +353,15 @@ async def logout():
     return response
 
 
-# =========================
+
 # Dashboard redirect → /tickets
-# =========================
 
 @app.get("/dashboard")
 async def dashboard_redirect():
     return RedirectResponse(url="/tickets", status_code=302)
 
 
-# =========================
 # Helpers for display
-# =========================
 
 def format_category_display(ticket: Ticket) -> str:
     if ticket.category_final:
@@ -406,9 +396,8 @@ def format_priority_display(ticket: Ticket) -> str:
             return f"Predicted: {ticket.priority_pred}"
         return "—"
 
-# =========================
-# Phase 4.1 & 4.3 – Ticket list (HTML) + filters + pagination
-# =========================
+
+#Ticket list + filters + pagination
 
 @app.get("/tickets", response_class=HTMLResponse)
 async def list_tickets(
@@ -482,18 +471,20 @@ async def list_tickets(
         next_link = f"<a href='{base_url}?page={page+1}&page_size={page_size}'>Next</a>"
 
     filters_info = (
-        f"category={category or '*'}, "
-        f"priority={priority or '*'}, "
-        f"queue={queue or '*'}, "
-        f"status={status or '*'}"
+        f"category {category or ''}, "
+        f"priority {priority or ''}, "
+        f"queue {queue or ''}, "
+        f"status {status or ''}"
     )
-
     return f"""
     <!DOCTYPE html>
     <html>
       <head>
         <meta charset="utf-8" />
         <title>Ticket Dashboard</title>
+      </head>
+      <body>
+        <h1>Ticket Dashboard ({current_user.username})</h1>
         <style>
           * {{
             box-sizing: border-box;
@@ -691,7 +682,6 @@ async def list_tickets(
           </div>
           <div class="nav-links">
             <a href="/tickets">Dashboard</a>
-            <a href="/">Create ticket</a>
             <a href="/admin/dataset">Training dataset</a>
             <a href="/logout">Logout</a>
           </div>
@@ -760,9 +750,8 @@ async def list_tickets(
     </html>
     """
 
-# =========================
-# Phase 4.2 & 4.3 – Ticket detail (HTML)
-# =========================
+
+# Ticket detail (HTML)
 
 @app.get("/tickets/{ticket_id}", response_class=HTMLResponse)
 async def ticket_detail(
@@ -942,12 +931,6 @@ async def ticket_detail(
           <div class="nav-title">
             AI Helpdesk • <span>{current_user.username}</span>
           </div>
-          <div class="nav-links">
-            <a href="/tickets">Dashboard</a>
-            <a href="/">Create ticket</a>
-            <a href="/admin/dataset">Training dataset</a>
-            <a href="/logout">Logout</a>
-          </div>
         </header>
 
         <main class="page">
@@ -1031,9 +1014,7 @@ async def ticket_edit_get(
     return await ticket_detail(ticket_id=ticket_id, current_user=current_user, db=db)
 
 
-# =========================
-# Phase 4.4 – HTML edit + ticket_history
-# =========================
+#ticket_history
 
 @app.post("/tickets/{ticket_id}/edit")
 async def ticket_edit_html(
@@ -1064,7 +1045,7 @@ async def ticket_edit_html(
             setattr(ticket, field, new_val)
             changes[field] = (old_val, new_val)
 
-    # Use the Phase-9 validators for consistency
+    # Use the validators for consistency
     maybe_update("category_final", category_final, validator=validate_category_final)
     maybe_update("priority_final", priority_final, validator=validate_priority_final)
     maybe_update("queue", queue, validator=validate_queue)
@@ -1087,9 +1068,8 @@ async def ticket_edit_html(
     # After POST, always go back to the detail page (no blank /edit)
     return RedirectResponse(url=f"/tickets/{ticket_id}", status_code=303)
 
-# =========================
-# Phase 4.4 – JSON PATCH /tickets/{id}
-# =========================
+
+#JSON PATCH /tickets/{id}
 
 @app.patch("/tickets/{ticket_id}", response_model=TicketRead)
 async def ticket_edit_api(
@@ -1137,50 +1117,161 @@ async def ticket_edit_api(
     db.refresh(ticket)
     return ticket
 
-
-# =========================
-# Ticket creation form (requires login)
-# =========================
-
-@app.get("/", response_class=HTMLResponse)
-async def ticket_form(current_user: User = Depends(get_current_user)):
+#  Landing page + public ticket subbmission form 
+@app.get("/public/ticket", response_class=HTMLResponse)
+async def public_ticket_form():
     """
-    Ticket creation form – only for authenticated users.
+    Public ticket form for students/guests.
+    No login required.
     """
     return """
     <!DOCTYPE html>
     <html>
       <head>
         <meta charset="utf-8" />
-        <title>Create Ticket</title>
+        <title>Create Support Ticket</title>
+        <style>
+          body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #0f172a;
+            color: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+          }
+          .card {
+            background: #020617;
+            border-radius: 16px;
+            padding: 28px 34px;
+            box-shadow: 0 22px 45px rgba(15,23,42,0.75);
+            width: 100%;
+            max-width: 640px;
+            border: 1px solid rgba(148,163,184,0.2);
+          }
+          h1 {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+          }
+          p.subtitle {
+            margin-top: 0;
+            color: #9ca3af;
+            font-size: 0.9rem;
+            margin-bottom: 1.2rem;
+          }
+          label {
+            display: block;
+            font-size: 0.85rem;
+            margin-bottom: 0.25rem;
+            color: #9ca3af;
+          }
+          input[type="text"],
+          input[type="email"],
+          textarea {
+            width: 100%;
+            padding: 0.55rem 0.75rem;
+            border-radius: 10px;
+            border: 1px solid rgba(148,163,184,0.3);
+            background: #020617;
+            color: #e5e7eb;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+          }
+          textarea {
+            resize: vertical;
+            min-height: 120px;
+          }
+          input:focus, textarea:focus {
+            outline: none;
+            border-color: #22c55e;
+            box-shadow: 0 0 0 1px rgba(34,197,94,0.4);
+          }
+          .field {
+            margin-bottom: 0.9rem;
+          }
+          .buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
+          }
+          button {
+            border: none;
+            border-radius: 999px;
+            padding: 0.55rem 1.1rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+          }
+          .btn-primary {
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: #022c22;
+          }
+          .btn-primary:hover {
+            filter: brightness(1.05);
+            transform: translateY(-1px);
+          }
+          .btn-ghost {
+            background: transparent;
+            border: 1px solid rgba(148,163,184,0.4);
+            color: #e5e7eb;
+          }
+          .btn-ghost:hover {
+            border-color: #22c55e;
+            color: #bbf7d0;
+            transform: translateY(-1px);
+          }
+          .small-note {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 0.5rem;
+          }
+        </style>
       </head>
       <body>
-        <h1>Create Support Ticket</h1>
-        <p><a href="/tickets">Back to dashboard</a> | <a href="/logout">Logout</a></p>
-        <form method="post" action="/tickets">
-          <label>Name:</label><br />
-          <input type="text" name="name" required /><br /><br />
+        <div class="card">
+          <h1>Student Helpdesk</h1>
+          <p class="subtitle">
+            Submit your issue or question. An administrator will review it and respond via email.
+          </p>
+          <form method="post" action="/public/ticket">
+            <div class="field">
+              <label for="name">Full name</label>
+              <input type="text" id="name" name="name" required />
+            </div>
 
-          <label>Email:</label><br />
-          <input type="email" name="email" required /><br /><br />
+            <div class="field">
+              <label for="email">Email address</label>
+              <input type="email" id="email" name="email" required />
+            </div>
 
-          <label>Subject:</label><br />
-          <input type="text" name="subject" required /><br /><br />
+            <div class="field">
+              <label for="subject">Subject</label>
+              <input type="text" id="subject" name="subject" required />
+            </div>
 
-          <label>Message:</label><br />
-          <textarea name="body" rows="5" cols="40" required></textarea><br /><br />
+            <div class="field">
+              <label for="body">Describe your issue</label>
+              <textarea id="body" name="body" required></textarea>
+            </div>
 
-          <label>Category hint (optional):</label><br />
-          <input type="text" name="category_hint" placeholder="Technical, Finance, etc." /><br /><br />
-
-          <button type="submit">Submit ticket</button>
-        </form>
+            <div class="buttons">
+              <button type="submit" class="btn-primary">Submit</button>
+            </div>
+            <p class="small-note">
+              By submitting, you agree that your request will be stored in the helpdesk system.
+            </p>
+          </form>
+        </div>
       </body>
     </html>
     """
 
-@app.post("/tickets", response_class=HTMLResponse)
-async def submit_ticket(
+
+@app.post("/public/ticket", response_class=HTMLResponse)
+async def submit_public_ticket(
     request: Request,
     name: str = Form(...),
     email: EmailStr = Form(...),
@@ -1188,34 +1279,25 @@ async def submit_ticket(
     body: str = Form(...),
     db: Session = Depends(get_db),
 ):
+    """
+    Handle public ticket submission, run ML classification and routing,
+    then redirect to thank-you page.
+    """
     full_text = f"{subject}\n{body}"
 
-        # ML category prediction
+    # ML category prediction
     predicted_category: Optional[str] = None
     confidence: Optional[float] = None
     if PREDICTOR_LOADED:
         predicted_category, confidence = predict_category(full_text)
 
-    # Normalize / fallback for category_final:
-    # if ML gives an unknown label, we fall back to "General"
-    if predicted_category and predicted_category.strip().lower() in _CATEGORY_CANON:
-        category_final = _CATEGORY_CANON[predicted_category.strip().lower()]
-    elif predicted_category:
-        # Unknown category from model → treat as General, but keep raw in category_pred
-        category_final = "General"
-    else:
-        category_final = None
-
-    # Auto priority (normalize to canonical form)
+    # Auto priority
     priority_pred = compute_priority(full_text, predicted_category)
-    priority_final = _PRIORITY_CANON.get(
-        (priority_pred or "").lower(),
-        "Low",  # safe default
-    )
+    priority_final = priority_pred
 
-    # Auto queue routing (Phase 7, normalized)
-    queue_raw = route_to_queue(category_final)
-    queue_value = _QUEUE_CANON.get((queue_raw or "").lower(), "General")
+    # Auto queue routing
+    category_final = predicted_category
+    queue_value = route_to_queue(category_final)
 
     ticket = Ticket(
         name=name,
@@ -1234,25 +1316,119 @@ async def submit_ticket(
     db.commit()
     db.refresh(ticket)
 
-    html = f"""
+    # Redirect to Thank-you page
+    return RedirectResponse(
+        url=f"/public/thanks?ticket_id={ticket.id}",
+        status_code=303,
+    )
+
+
+@app.get("/public/thanks", response_class=HTMLResponse)
+async def public_thanks(ticket_id: int):
+    """
+    Thank-you page after public ticket creation.
+    """
+    return f"""
+    <!DOCTYPE html>
     <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>Ticket submitted</title>
+        <style>
+          body {{
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #0f172a;
+            color: #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+          }}
+          .card {{
+            background: #020617;
+            border-radius: 16px;
+            padding: 28px 34px;
+            box-shadow: 0 22px 45px rgba(15,23,42,0.75);
+            width: 100%;
+            max-width: 520px;
+            border: 1px solid rgba(148,163,184,0.2);
+            text-align: center;
+          }}
+          h1 {{
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+          }}
+          p {{
+            margin-top: 0.25rem;
+            margin-bottom: 0.25rem;
+          }}
+          .ticket-id {{
+            font-family: monospace;
+            color: #a5b4fc;
+          }}
+          .buttons {{
+            display: flex;
+            justify-content: center;
+            gap: 0.75rem;
+            margin-top: 1.2rem;
+          }}
+          button {{
+            border: none;
+            border-radius: 999px;
+            padding: 0.55rem 1.1rem;
+            font-size: 0.9rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+          }}
+          .btn-primary {{
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: #022c22;
+          }}
+          .btn-primary:hover {{
+            filter: brightness(1.05);
+            transform: translateY(-1px);
+          }}
+          .btn-ghost {{
+            background: transparent;
+            border: 1px solid rgba(148,163,184,0.4);
+            color: #e5e7eb;
+          }}
+          .btn-ghost:hover {{
+            border-color: #22c55e;
+            color: #bbf7d0;
+            transform: translateY(-1px);
+          }}
+          .small-note {{
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 0.75rem;
+          }}
+        </style>
+      </head>
       <body>
-        <h1>Ticket created successfully</h1>
-        <p><strong>ID:</strong> {ticket.id}</p>
-        <p><strong>Subject:</strong> {ticket.subject}</p>
-        <p><strong>Category:</strong> {ticket.category_final or ticket.category_pred or "—"}</p>
-        <p><strong>Priority:</strong> {ticket.priority_final or ticket.priority_pred or "—"}</p>
-        <p><strong>Queue:</strong> {ticket.queue or "—"}</p>
-        <p><a href="/tickets">Back to dashboard</a> | <a href="/">Create another ticket</a></p>
+        <div class="card">
+          <h1>Thank you for your request</h1>
+          <p>Your ticket has been created successfully.</p>
+          <p>Ticket ID: <span class="ticket-id">{ticket_id}</span></p>
+          <p class="small-note">An administrator will review it and contact you by email if needed.</p>
+          <div class="buttons">
+            <button class="btn-primary"
+                    onclick="window.location.href='/public/ticket'">
+              Create new ticket
+            </button>
+            <button class="btn-ghost"
+                    onclick="window.close()">
+              Close page
+            </button>
+          </div>
+        </div>
       </body>
     </html>
     """
-    return HTMLResponse(html)
 
-
-#====================
 # Admin CSV/JSON import (admin only)
-# =========================
 
 @app.post("/admin/import-tickets")
 async def import_tickets(
@@ -1309,9 +1485,8 @@ async def import_tickets(
         detail="Provide either a CSV file ('file') or a JSON list of tickets in the body.",
     )
 
-# =========================
-# Phase 8 – Admin dataset + training + metrics
-# =========================
+#Admin dataset + training + metrics
+
 @app.get("/admin/dataset", response_class=HTMLResponse)
 async def admin_dataset_page(
     current_user: User = Depends(require_admin),
@@ -1519,8 +1694,8 @@ async def admin_dataset_upload(
     db: Session = Depends(get_db),
 ):
     """
-    Phase 8.1 upload labelled dataset.
-    CSV headers: subject, body, true_category, (optional) true_priority
+    Upload labelled dataset.
+    CSV headers: subject, body, true_category, true_priority
     """
     raw = await file.read()
     try:
@@ -1559,7 +1734,7 @@ async def admin_train_model(
     current_user: User = Depends(require_admin),
 ):
     """
-    Phase 8.2 train model from training_samples.
+    Train model from training_samples.
     Calls train_and_save_from_db(), which writes metrics into training_runs.
     """
     metrics = train_and_save_from_db()
@@ -1580,7 +1755,7 @@ async def admin_metrics(
     db: Session = Depends(get_db),
 ):
     """
-    Phase 8.3 – show metrics of the latest training run:
+    Show metrics of the latest training run:
     accuracy, precision, recall, F1 per category (for ML model).
     Also shows baseline summary.
     """
@@ -1656,8 +1831,6 @@ async def admin_metrics(
     </html>
     """
 
-# =========================
-# Existing JSON API v1
-# =========================
 
+# Existing JSON API v1
 app.include_router(tickets_router, prefix="/api/v1")

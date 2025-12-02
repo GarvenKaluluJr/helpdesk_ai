@@ -20,9 +20,7 @@ MODEL_PATH = Path(__file__).resolve().parent / "models" / "ticket_category_model
 MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-# -----------------------------
 # Baseline keyword classifier
-# -----------------------------
 
 def baseline_predict(text: str) -> str:
     """
@@ -43,9 +41,8 @@ def baseline_predict(text: str) -> str:
     return "General"
 
 
-# -----------------------------
+
 # Load labelled data from DB
-# -----------------------------
 
 def _load_training_data() -> Tuple[List[str], List[str]]:
     db = SessionLocal()
@@ -78,7 +75,7 @@ def train_and_save_from_db() -> dict | None:
     print(f"[TRAIN] Loaded {len(texts)} samples, {len(classes)} classes: {classes}")
     print(f"[TRAIN] Label counts: {label_counts}")
 
-    # --- NEW: only do a train/test split when the dataset is big enough ---
+# NEW: only do a train/test split when the dataset is big enough 
     MIN_SAMPLES_PER_CLASS_FOR_SPLIT = 5
     MIN_TOTAL_SAMPLES_FOR_SPLIT = 50
 
@@ -99,7 +96,7 @@ def train_and_save_from_db() -> dict | None:
         print(f"[TRAIN] Using train/test split: {len(X_train)} train, {len(X_test)} test")
         eval_mode = "train/test split"
     else:
-        # For small datasets (your current case), train and evaluate on ALL samples.
+# For small datasets (your current case), train and evaluate on ALL samples.
         X_train, y_train = texts, labels
         X_test, y_test = texts, labels
         eval_mode = "full dataset (no hold-out)"
@@ -108,7 +105,7 @@ def train_and_save_from_db() -> dict | None:
             "(no separate test set)."
         )
 
-    # TF-IDF + Logistic Regression model
+# TF-IDF + Logistic Regression model
     vectorizer = TfidfVectorizer(
         ngram_range=(1, 2),
         max_features=5000,
@@ -123,7 +120,7 @@ def train_and_save_from_db() -> dict | None:
     )
     clf.fit(X_train_vec, y_train)
 
-    # ML predictions
+# ML predictions
     X_test_vec = vectorizer.transform(X_test)
     y_pred_ml = clf.predict(X_test_vec)
 
@@ -136,7 +133,7 @@ def train_and_save_from_db() -> dict | None:
         f"macro F1={macro_f1_ml:.3f}"
     )
 
-    # Baseline predictions
+# Baseline predictions
     y_pred_base = [baseline_predict(t) for t in X_test]
     acc_base = float(accuracy_score(y_test, y_pred_base))
     macro_f1_base = float(f1_score(y_test, y_pred_base, average="macro"))
@@ -147,14 +144,14 @@ def train_and_save_from_db() -> dict | None:
         f"macro F1={macro_f1_base:.3f}"
     )
 
-    # Save model
+# Save model
     joblib.dump(
         {"vectorizer": vectorizer, "classifier": clf},
         MODEL_PATH,
     )
     print(f"[TRAIN] Saved model to {MODEL_PATH}")
 
-    # Save metrics in DB
+# Save metrics in DB
     db = SessionLocal()
     try:
         metrics = {
@@ -187,5 +184,5 @@ def train_and_save_from_db() -> dict | None:
 
 
 if __name__ == "__main__":
-    # CLI usage: python -m helpdesk_ai.backend.app.ml.train_classifier
+# CLI usage: python -m helpdesk_ai.backend.app.ml.train_classifier
     train_and_save_from_db()
