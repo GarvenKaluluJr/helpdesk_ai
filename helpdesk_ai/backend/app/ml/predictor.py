@@ -58,11 +58,11 @@ def _load_model() -> None:
     try:
         obj = joblib.load(MODEL_PATH)
 
-        # Preferred format: sklearn Pipeline
+# Preferred format: sklearn Pipeline
         if hasattr(obj, "predict"):
             _classifier = obj
 
-        # Old format from earlier phases: {"vectorizer": ..., "classifier": ...}
+# Old format from earlier phases: {"vectorizer": ..., "classifier": ...}
         elif isinstance(obj, dict) and "vectorizer" in obj and "classifier" in obj:
             _classifier = _DictModelWrapper(
                 vectorizer=obj["vectorizer"],
@@ -98,20 +98,19 @@ def predict_category(text: str) -> Tuple[Optional[str], Optional[float]]:
         return None, None
 
     try:
-        # Use probabilities
+# Use probabilities
         if hasattr(_classifier, "predict_proba"):
             probs = _classifier.predict_proba([text])[0]
-            # sklearn classifiers expose `classes_`
+# sklearn classifiers expose `classes_`
             classes = getattr(_classifier, "classes_", None)
             if classes is None:
-                # Fallback: just take argmax but no class labels
+# Fallback: just take argmax but no class labels
                 idx = probs.argmax()
                 return None, float(probs[idx])
             idx = probs.argmax()
             label = classes[idx]
             return str(label), float(probs[idx])
-
-        # Fallback: simple predict without probabilities
+# Fallback: simple predict without probabilities
         label = _classifier.predict([text])[0]
         return str(label), None
 
@@ -175,17 +174,17 @@ def route_to_queue(category: Optional[str]) -> str:
 
     cat = category.strip().lower()
 
-    # IT / technical queues
+# IT / technical queues
     if cat in {"technical", "tech", "account", "access"}:
         return "IT"
 
-    # Finance / billing
+# Finance / billing
     if cat in {"finance", "financy", "billing"}:
         return "Finance"
 
-    # Admissions / admin
+# Admissions / admin
     if cat in {"administration", "admissions"}:
         return "Admissions"
 
-    # Default
+# Default
     return "General"

@@ -31,4 +31,4 @@ class TicketHistory(Base):
     )
 
     ticket = relationship("Ticket", back_populates="history_entries")
-    # changed_by_user = relationship("User")  # optional, not needed for Phase 1
+    # changed_by_user = relationship("User") 
