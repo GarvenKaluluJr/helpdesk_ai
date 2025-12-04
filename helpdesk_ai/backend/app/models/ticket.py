@@ -1,5 +1,4 @@
 # backend/app/models/ticket.py
-
 from sqlalchemy import (
     Column,
     DateTime,

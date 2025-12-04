@@ -1,5 +1,4 @@
 # backend/app/models/ticket_history.py
-
 from sqlalchemy import (
     Column,
     DateTime,

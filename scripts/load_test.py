@@ -1,5 +1,4 @@
 # scripts/load_test.py
-
 import asyncio
 import httpx
 

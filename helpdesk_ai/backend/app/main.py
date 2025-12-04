@@ -352,8 +352,6 @@ async def logout():
     response.delete_cookie("access_token")
     return response
 
-
-
 # Dashboard redirect → /tickets
 
 @app.get("/dashboard")
@@ -740,7 +738,6 @@ async def list_tickets(
               </tbody>
             </table>
           </section>
-
           <div class="pagination">
             <span>{prev_link}</span>
             <span>{next_link}</span>
@@ -1065,7 +1062,7 @@ async def ticket_edit_html(
 
     db.commit()
 
-    # After POST, always go back to the detail page (no blank /edit)
+# After POST, always go back to the detail page (no blank /edit)
     return RedirectResponse(url=f"/tickets/{ticket_id}", status_code=303)
 
 
@@ -1830,7 +1827,5 @@ async def admin_metrics(
       </body>
     </html>
     """
-
-
 # Existing JSON API v1
 app.include_router(tickets_router, prefix="/api/v1")
