@@ -1,5 +1,4 @@
 # helpdesk_ai/backend/app/schemas/ticket.py
-
 from datetime import datetime
 from typing import Optional
 
